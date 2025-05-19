@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[ ]:
 
 
 import warnings
@@ -28,7 +28,7 @@ sys.path.insert(0, "../Src/")
 get_ipython().run_line_magic('autosave', '5')
 
 
-# In[5]:
+# In[ ]:
 
 
 #dataSet = pd.read_csv('../Data/train_data.csv')
@@ -247,21 +247,23 @@ def generateAudioInBatches(speakers, trainDF, batch_size=10):
         print(f"Processing model: {model}")
         model_dir_name = model.replace("/", "_")
         outputCSVFile = f'../Data/ttsOutputs/{model_dir_name}_generatedSentences.csv'
+        missing_speakers = list(speakers)
         if exists(outputCSVFile):
             outputDF = pd.read_csv(outputCSVFile)
             processed_speakers = set(outputDF['speakerId'])
-            missing_speakers = set(speakers) - processed_speakers
+            missing_speakers = list(set(speakers) - processed_speakers)  # <-- fix here
             if not missing_speakers:
                 print(f"All speakers processed for model {model}. Skipping.")
                 continue
+            print(f'missing {len(missing_speakers)} speakers for model {model}')
         
         modelDirectory = f'../Data/ttsOutputs/{model_dir_name}'
         os.makedirs(modelDirectory, exist_ok=True)
         speakerSentencesPath = f'../Data/ttsOutputs/{model_dir_name}_generatedSentences.json'
         speakerSentences = loadGeneratedSentencesFromJson(speakerSentencesPath)
 
-        for i in range(0, len(speakers), batch_size):
-            batch = speakers[i:i + batch_size]
+        for i in range(0, len(missing_speakers), batch_size):
+            batch = missing_speakers[i:i + batch_size]
             print(f"Processing batch {i // batch_size + 1}: {batch}")
 
             tts = generateTTS(model)
@@ -269,6 +271,7 @@ def generateAudioInBatches(speakers, trainDF, batch_size=10):
                 print(f"Failed to generate TTS for model {model}. Skipping.")
                 continue
 
+            results = []
             with ThreadPoolExecutor(max_workers=batch_size) as executor:
                 futures = [
                     executor.submit(process_speaker, speaker, trainDF, tts, modelDirectory)
@@ -277,9 +280,11 @@ def generateAudioInBatches(speakers, trainDF, batch_size=10):
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
-                        speakerSentences.append(result)
-                        with open(speakerSentencesPath, 'w') as f:
-                            json.dump(speakerSentences, f)
+                        results.append(result)
+            # Write results after batch
+            speakerSentences.extend(results)
+            with open(speakerSentencesPath, 'w') as f:
+                json.dump(speakerSentences, f)
 
             saveGeneratedSentences(speakerSentences, model_dir_name, modelDirectory)
 
