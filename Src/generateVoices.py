@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
 import warnings
@@ -28,7 +28,7 @@ sys.path.insert(0, "../Src/")
 get_ipython().run_line_magic('autosave', '5')
 
 
-# In[ ]:
+# In[2]:
 
 
 #dataSet = pd.read_csv('../Data/train_data.csv')
@@ -39,14 +39,14 @@ get_ipython().run_line_magic('autosave', '5')
 # print(len(uniqueSpeakers))
 
 
-# In[ ]:
+# In[3]:
 
 
 def readCsv(dataset):
     return pd.read_csv(f'../Data/{dataset}_data.csv')
 
 
-# In[ ]:
+# In[4]:
 
 
 def getSpeakers(df):
@@ -54,14 +54,14 @@ def getSpeakers(df):
     return list(set(speakerIds))
 
 
-# In[ ]:
+# In[5]:
 
 
 def getFilesBySpeaker(df,speakerId):
     return df[df['speaker_id']==speakerId]
 
 
-# In[ ]:
+# In[6]:
 
 
 def concatenateAudio(speakerId, speakerDF):
@@ -96,7 +96,7 @@ def concatenateAudio(speakerId, speakerDF):
     
 
 
-# In[ ]:
+# In[7]:
 
 
 def readSentenceFromFile(sentenceFile):
@@ -110,7 +110,7 @@ def readSentenceFromFile(sentenceFile):
 
 
 
-# In[ ]:
+# In[8]:
 
 
 def generateAndNormalizeAudio(tts, sentence, inputAudioFile, outputAudioFile):
@@ -119,7 +119,8 @@ def generateAndNormalizeAudio(tts, sentence, inputAudioFile, outputAudioFile):
         tts.tts_with_vc_to_file(
             text=sentence,
             file_path=outputAudioFile,
-            speaker_wav=inputAudioFile
+            speaker_wav=inputAudioFile,
+            speaker_embedding=None,
         )
         if not exists(outputAudioFile):
             print(f"Warning: Output file {outputAudioFile} was not created.")
@@ -140,24 +141,38 @@ def generateAndNormalizeAudio(tts, sentence, inputAudioFile, outputAudioFile):
         return False
 
 
-# In[ ]:
+# In[9]:
 
 
 def saveGeneratedSentences(speakerSentences, model_dir_name, modelDirectory):
     outputFile = f'../Data/ttsOutputs/{model_dir_name}_generatedSentences.csv'
+    speakerSentencesJsonFile = f'../Data/ttsOutputs/{model_dir_name}_generatedSentences.json'
+
+    # Remove empty JSON file and directory if JSON is empty
+    if exists(speakerSentencesJsonFile):
+        try:
+            with open(speakerSentencesJsonFile, 'r') as f:
+                if not json.load(f):
+                    os.remove(speakerSentencesJsonFile)
+                    print(f"Removed empty JSON file: {speakerSentencesJsonFile}")
+                    shutil.rmtree(modelDirectory, ignore_errors=True)
+                    return
+        except Exception as e:
+            print(f"Error checking/removing JSON file: {e}")
+
     if speakerSentences:
         try:
-            pd.DataFrame(speakerSentences).to_csv(
-                outputFile, index=False
-            )
+            pd.DataFrame(speakerSentences).to_csv(outputFile, index=False)
         except Exception as e:
             print(f"Failed to save generated sentences: {e}")
             shutil.rmtree(modelDirectory, ignore_errors=True)
+            return
+
     if not exists(outputFile):
         print(f"Warning: Output file {outputFile} was not created.")
 
 
-# In[ ]:
+# In[10]:
 
 
 def loadGeneratedSentencesFromJson(speakerSentencesPath):
@@ -169,7 +184,7 @@ def loadGeneratedSentencesFromJson(speakerSentencesPath):
     return speakerSentences
 
 
-# In[ ]:
+# In[11]:
 
 
 def generateTTS(model):
@@ -187,7 +202,7 @@ def generateTTS(model):
     return result
 
 
-# In[ ]:
+# In[12]:
 
 
 def process_speaker(speaker, trainDF, tts, modelDirectory):
@@ -221,7 +236,7 @@ def process_speaker(speaker, trainDF, tts, modelDirectory):
     return None
 
 
-# In[ ]:
+# In[13]:
 
 
 def getRawEnglishModelNames():
@@ -229,7 +244,7 @@ def getRawEnglishModelNames():
     return [model for model in manager.list_models() if "/en/" in model]
 
 
-# In[ ]:
+# In[14]:
 
 
 def generateAudioInBatches(speakers, trainDF, batch_size=10):
@@ -289,7 +304,7 @@ def generateAudioInBatches(speakers, trainDF, batch_size=10):
             saveGeneratedSentences(speakerSentences, model_dir_name, modelDirectory)
 
 
-# In[ ]:
+# In[15]:
 
 
 def main():
@@ -311,7 +326,7 @@ def main():
     
 
 
-# In[ ]:
+# In[16]:
 
 
 if __name__ == '__main__':
