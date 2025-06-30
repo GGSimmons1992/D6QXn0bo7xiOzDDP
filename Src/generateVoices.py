@@ -64,12 +64,14 @@ def getFilesBySpeaker(df,speakerId):
 # In[6]:
 
 
-def concatenateAudio(speakerId, speakerDF):
+def concatenateAudio(speakerId, speakerDF,datasetName='train'):
     if speakerDF.empty:
         print(f"Empty DataFrame for speaker {speakerId}. Skipping.")
         return
-
-    finalAudioFile = f'../Data/concatenatedInputs/{speakerId}.wav'
+    if datasetName == 'train':
+        finalAudioFile = f'../Data/concatenatedInputs/{speakerId}.wav'
+    else:
+        finalAudioFile = f'../Data/concatenatedTestInputs/{speakerId}.wav'
     audioData = speakerDF[speakerDF['filename'].str.endswith('.wav', na=False)]
 
     if audioData.empty:
@@ -122,9 +124,6 @@ def generateAndNormalizeAudio(tts, sentence, inputAudioFile, outputAudioFile):
             speaker_wav=inputAudioFile,
             speaker_embedding=None,
         )
-        if not exists(outputAudioFile):
-            print(f"Warning: Output file {outputAudioFile} was not created.")
-            return False
 
         # Normalize the generated audio
         original_audio = AudioSegment.from_wav(inputAudioFile)
@@ -135,6 +134,8 @@ def generateAndNormalizeAudio(tts, sentence, inputAudioFile, outputAudioFile):
 
         # Export the normalized audio back to the same file
         normalized_audio.export(outputAudioFile, format='wav')
+        if not exists(outputAudioFile):
+            raise FileNotFoundError(f"Output file {outputAudioFile} was not created.")
         return True
     except Exception as e:
         print(f"Failed to generate or normalize audio: {e}")
