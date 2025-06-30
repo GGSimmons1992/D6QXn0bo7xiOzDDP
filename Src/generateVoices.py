@@ -122,7 +122,6 @@ def generateAndNormalizeAudio(tts, sentence, inputAudioFile, outputAudioFile):
             text=sentence,
             file_path=outputAudioFile,
             speaker_wav=inputAudioFile,
-            speaker_embedding=None,
         )
 
         # Normalize the generated audio
