@@ -19,6 +19,8 @@ import numpy.core.multiarray
 import shutil
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import random
+import tempfile
 
 torch.serialization.add_safe_globals([RAdam, numpy.core.multiarray.scalar])
 
@@ -121,7 +123,7 @@ def generateAndNormalizeAudio(tts, sentence, inputAudioFile, outputAudioFile):
         tts.tts_with_vc_to_file(
             text=sentence,
             file_path=outputAudioFile,
-            speaker_wav=inputAudioFile,
+            speaker_wav=inputAudioFile
         )
 
         # Normalize the generated audio
@@ -147,7 +149,8 @@ def generateAndNormalizeAudio(tts, sentence, inputAudioFile, outputAudioFile):
 def saveGeneratedSentences(speakerSentences, model_dir_name, modelDirectory):
     outputFile = f'../Data/ttsOutputs/{model_dir_name}_generatedSentences.csv'
     speakerSentencesJsonFile = f'../Data/ttsOutputs/{model_dir_name}_generatedSentences.json'
-
+    for resultFile in [outputFile, speakerSentencesJsonFile]:
+        os.makedirs(os.path.dirname(resultFile), exist_ok=True)
     # Remove empty JSON file and directory if JSON is empty
     if exists(speakerSentencesJsonFile):
         try:
@@ -221,6 +224,9 @@ def process_speaker(speaker, trainDF, tts, modelDirectory):
         return None
 
     chosenSentenceFile = np.random.choice(textFiles['path_from_data_dir'])
+    matchingRealAudioFile = f"../Data/data/{chosenSentenceFile.replace('.TXT', '.WAV.wav')}"
+    if not exists(matchingRealAudioFile):
+        raise FileNotFoundError(f"Matching audio file {matchingRealAudioFile} does not exist for speaker {speaker}.")
     chosenSentence = readSentenceFromFile(chosenSentenceFile)
     if not chosenSentence:
         print(f"Chosen sentence for speaker {speaker} is empty. Skipping.")
@@ -230,9 +236,12 @@ def process_speaker(speaker, trainDF, tts, modelDirectory):
     if not exists(audioFile):
         print(f"Audio file for {speaker} does not exist. Skipping.")
         return None
-
+    os.makedirs(os.path.dirname(outputFilePath), exist_ok=True)
     if generateAndNormalizeAudio(tts, chosenSentence, audioFile, outputFilePath):
         return {'speakerId': speaker, 'generatedSentence': chosenSentence}
+    elif generateAndNormalizeAudio(tts, chosenSentence, matchingRealAudioFile, outputFilePath):
+        return {'speakerId': speaker, 'generatedSentence': chosenSentence}
+
     return None
 
 
