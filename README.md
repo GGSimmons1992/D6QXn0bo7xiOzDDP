@@ -34,7 +34,9 @@ The goal of this project is to create 2 models, one is for Voice Cloning (VC), a
 ### Data (not included due to .gitignore)
 
 Data is from the TIMIT Corpus. The TIMIT corpus of read speech is designed to provide speech data for acoustic-phonetic studies and for the development and evaluation of automatic speech recognition systems. TIMIT contains a total of 6300 sentences, 10 sentences spoken by each of 630 speakers from 8 major dialect regions of the United States.
+
 [Corpus Creation Repo Link](https://github.com/philipperemy/timit)
+
 [Corpus Dataset on Kaggle Link](https://www.kaggle.com/datasets/mfekadu/darpa-timit-acousticphonetic-continuous-speech)
 
 ### Models
