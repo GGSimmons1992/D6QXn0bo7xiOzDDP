@@ -1,0 +1,383 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+import sys
+import subprocess
+sys.path.insert(0, "../Src/")
+
+import numpy as np
+import pandas as pd
+import os
+from IPython.display import display
+import json
+from os.path import exists
+import tensorflow as tf
+import tensorflow.keras as keras
+from tensorflow.keras import backend as K
+
+get_ipython().run_line_magic('autosave', '5')
+
+
+# In[2]:
+
+
+def loadData(dataset, split=0, batch_size=32, seed=51):
+    mfccFiles = {
+        'training': '../Data/mfcc/mfcc_train.npz',
+        'testing': '../Data/mfcc/mfcc_test.npz'
+    }
+
+    mfccPath = mfccFiles.get(dataset, dataset)
+
+    if not exists(mfccPath):
+        print(f'{mfccPath} was not found. Regenerating MFCC features...')
+        import createMFCCs as cmfcc
+        cmfcc.createMFCCMatricies(output_dir='../Data/mfcc')
+
+    if not exists(mfccPath):
+        raise FileNotFoundError(f'Could not find MFCC archive: {mfccPath}')
+
+    with np.load(mfccPath) as mfccData:
+        X = mfccData['X'].astype(np.float32)
+        y = mfccData['y'].astype(np.float32)
+
+    if len(X) == 0:
+        raise ValueError(f'No MFCC samples were found in {mfccPath}')
+
+    if X.ndim == 3:
+        X = np.expand_dims(X, -1)
+
+    rng = np.random.default_rng(seed)
+    shuffledIndices = rng.permutation(len(X))
+    X = X[shuffledIndices]
+    y = y[shuffledIndices]
+
+    def makeDataset(features, labels, shouldShuffle=True):
+        dataset = tf.data.Dataset.from_tensor_slices((features, labels))
+        if shouldShuffle and len(features) > 1:
+            dataset = dataset.shuffle(len(features), seed=seed, reshuffle_each_iteration=True)
+        return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+    if split == 0:
+        print('In non split')
+        return makeDataset(X, y)
+
+    print('In split')
+    if len(X) < 2:
+        raise ValueError(f'Need at least 2 samples to split {mfccPath}')
+
+    splitIndex = max(1, int(len(X) * split))
+    splitIndex = min(splitIndex, len(X) - 1)
+
+    devX = X[:splitIndex]
+    devY = y[:splitIndex]
+    testX = X[splitIndex:]
+    testY = y[splitIndex:]
+
+    return makeDataset(devX, devY, shouldShuffle=False), makeDataset(testX, testY, shouldShuffle=False)
+
+
+# In[3]:
+
+
+def f1_score(y_true, y_pred): #taken from old keras source code 
+    y_true = K.round(K.clip(y_true, 0, 1))
+    y_pred = K.round(K.clip(y_pred, 0, 1))
+    
+    true_positives = K.sum(y_true * y_pred)
+    predicted_positives = K.sum(y_pred)
+    possible_positives = K.sum(y_true)
+    
+    precision = true_positives / (predicted_positives + K.epsilon())
+    recall = true_positives / (possible_positives + K.epsilon())
+    
+    f1_val = 2 * (precision * recall) / (precision + recall + K.epsilon())
+    return f1_val
+
+
+# In[4]:
+
+
+def createModel(convFilters1, convFilters2, convFilters3, convFilters4, numberOfFCLayers, numberOfNeuronsPerFCLayer, adamLearningRate, L2Rate):
+    model = keras.Sequential()
+        
+    #convPool1
+    model.add(keras.layers.Conv2D(convFilters1,(3,3), activation='relu',padding='valid'))
+    model.add(keras.layers.MaxPooling2D(pool_size=(2,2), padding='valid'))
+    #convPool2
+    model.add(keras.layers.Conv2D(convFilters2,(3,3), activation='relu',padding='valid'))
+    model.add(keras.layers.MaxPooling2D(pool_size=(2,2), padding='valid'))
+    #convPool3
+    model.add(keras.layers.Conv2D(convFilters3,(3,3), activation='relu',padding='valid'))
+    model.add(keras.layers.MaxPooling2D(pool_size=(2,2), padding='valid'))
+    #finalConv
+    model.add(keras.layers.Conv2D(convFilters4,(3,3), activation='relu',padding='valid'))
+    
+    model.add(keras.layers.Flatten())
+    
+    for layer in range(numberOfFCLayers):
+        if layer == numberOfFCLayers - 1:
+            model.add(keras.layers.Dense(1,activation='sigmoid'))
+        else:
+            model.add(keras.layers.Dense(numberOfNeuronsPerFCLayer,activation='relu',kernel_regularizer=tf.keras.regularizers.l2(L2Rate)))
+
+    try:
+        adamOptimizer = keras.optimizers.legacy.Adam(learning_rate=adamLearningRate)
+    except AttributeError:
+        adamOptimizer = keras.optimizers.Adam(learning_rate=adamLearningRate)
+
+    model.compile(optimizer=adamOptimizer,loss='binary_crossentropy', metrics=[f1_score])
+    return model
+
+
+# In[5]:
+
+
+def createModelParametersDF(n_convFilters1,n_convFilters2,n_convFilters3,n_convFilters4,
+                            n_FCLayers,n_NeuronsPerFCLayers,n_Epochs,adamLearningRates,
+                            L2Rates,trainScores,devScores):
+    modelParameters = dict()
+    modelParameters['n_convFilters1'] = n_convFilters1
+    modelParameters['n_convFilters2'] = n_convFilters2
+    modelParameters['n_convFilters3'] = n_convFilters3
+    modelParameters['n_convFilters4'] = n_convFilters4
+    modelParameters['n_FCLayers'] = n_FCLayers
+    modelParameters['n_NeuronsPerFCLayers'] = n_NeuronsPerFCLayers
+    modelParameters['n_Epochs'] = n_Epochs
+    modelParameters['adamLearningRates'] = adamLearningRates
+    modelParameters['L2Rates'] = L2Rates
+    modelParameters['trainScore'] = trainScores
+    modelParameters['devScore'] = devScores
+
+    modelParametersDF = pd.DataFrame(modelParameters, columns=modelParameters.keys())
+    return modelParametersDF
+
+
+# In[6]:
+
+
+def createRangeFromMidpoint(midpoint,range,mandatoryMinimum=1):
+    possibleMin = int(midpoint-(range/2))
+    possibleMin = max([mandatoryMinimum,possibleMin])
+    possibleMax = int(midpoint+(range/2))
+    possibleRange = np.arange(possibleMin,possibleMax)
+    return possibleRange
+
+
+def generateAdamLearningRate(minVal=1e-4,maxVal=1e-2):
+    minVal = np.log10(minVal)
+    maxVal = np.log10(maxVal)
+    learningRatePower = np.random.random() * (maxVal - minVal) + minVal
+    learningRate = np.power(10,learningRatePower)
+    return learningRate
+
+
+def generateL2(minVal=1e-2,maxVal=1e3):
+    minVal = np.log10(minVal)
+    maxVal = np.log10(maxVal)
+    l2Power = np.random.random() * (maxVal - minVal) + minVal
+    l2 = np.power(10,l2Power)
+    return l2
+
+
+def calculateCriticalPoints(top5ParamList):
+    lowPoint = np.min(top5ParamList)
+    highPoint = np.max(top5ParamList)
+    return (lowPoint,highPoint)
+
+
+def calculateLogisticCriticalPoints(top5ParamList):
+    top5Log10ParamList = np.log10(top5ParamList)
+    log10criticalPointTuple = calculateCriticalPoints(top5Log10ParamList)
+    criticalPointTuple = (np.power(10,log10criticalPointTuple[0]),np.power(10,log10criticalPointTuple[1]))
+    return criticalPointTuple
+
+
+def getAdjustedRange(top5ParamList):
+    lowerValue = int(np.max([1,np.min(top5ParamList)]))
+    upperValue = int(np.max(top5ParamList))
+    
+    if lowerValue == upperValue:
+        return createRangeFromMidpoint(lowerValue,2*lowerValue)
+    return np.arange(lowerValue,upperValue)
+
+
+def displayFinalResults(parameterFileName):
+    if (exists(parameterFileName)):
+        with open(parameterFileName) as d:
+            finalResults = json.load(d)
+            resultsDictionary = dict()
+            for key in finalResults.keys():
+                resultsDictionary[key] = [finalResults[key]]
+            resultsDF = pd.DataFrame(resultsDictionary,columns = finalResults.keys())
+            print('Final Model')
+            display(resultsDF)
+
+
+# In[7]:
+
+
+def main():
+
+    possibleConvFilters1 = createRangeFromMidpoint(32,64)
+    possibleConvFilters2 = createRangeFromMidpoint(32,64)
+    possibleConvFilters3 = createRangeFromMidpoint(32,64)
+    possibleConvFilters4 = createRangeFromMidpoint(32,64)
+
+    possibleNumberOfFCLayers = createRangeFromMidpoint(10,20)
+    possibleNumberOfNeuronsPerFCLayer = createRangeFromMidpoint(10,20)
+
+    possibleNumberOfEpochs = createRangeFromMidpoint(10,20)
+    dropoutCriticalPoints = (0,1)
+    adamLearningRateCriticalPoints = (1e-4,1e-2)
+    L2CriticalPoints = (1e-2,1e3)    
+    
+    trial = 0
+    bestDevScore = 0
+
+    os.makedirs('../Models', exist_ok=True)
+    os.makedirs('../Models/DetectVoicesModelTrials', exist_ok=True)
+    
+    train = loadData('training')
+    dev,test = loadData('testing',.5)
+
+    choose = np.random.choice
+
+    n_convFilters1 = []
+    n_convFilters2 = []
+    n_convFilters3 = []
+    n_convFilters4 = []
+    n_FCLayers = []
+    n_NeuronsPerFCLayers = []
+    n_Epochs = []
+    adamLearningRates = []
+    L2Rates = []
+    trainScores = []
+    devScores = []
+    
+    while trial < 100:
+        convFilters1 = choose(possibleConvFilters1)
+        convFilters2 = choose(possibleConvFilters2)
+        convFilters3 = choose(possibleConvFilters3)
+        convFilters4 = choose(possibleConvFilters4)
+
+        numberOfFCLayers = choose(possibleNumberOfFCLayers)
+        numberOfNeuronsPerFCLayer = choose(possibleNumberOfNeuronsPerFCLayer)
+
+        numberOfEpochs = choose(possibleNumberOfEpochs)
+        
+        adamLearningRate = generateAdamLearningRate(adamLearningRateCriticalPoints[0],adamLearningRateCriticalPoints[1])
+        L2Rate = generateL2(L2CriticalPoints[0],L2CriticalPoints[1])
+        
+
+        model = createModel(convFilters1, convFilters2, convFilters3, convFilters4,
+                            numberOfFCLayers, numberOfNeuronsPerFCLayer, adamLearningRate,L2Rate)
+    
+        model.fit(train,epochs=numberOfEpochs,verbose=0)
+
+        model_path = f'../Models/DetectVoicesModelTrials/dv_model_{trial}.h5'
+        model.save(model_path)
+        model_size = os.path.getsize(model_path) / (1024 * 1024)
+        if model_size < 40:
+            print()
+            print('trainScore')
+            trainScore = float(model.evaluate(train, verbose=0)[1])
+            print(trainScore)
+            print('devScore')
+            devScore = float(model.evaluate(dev, verbose=0)[1])
+            print(devScore)
+
+            if (devScore > 0.91) and (devScore > bestDevScore):
+                testScore = float(model.evaluate(test, verbose=0)[1])
+                model_path = f'../Models/best_dv_model_.h5'
+                model.save(model_path)
+                bestModelParams = {
+                    'n_convFilters1' : int(convFilters1),
+                    'n_convFilters2' : int(convFilters2),
+                    'n_convFilters3' : int(convFilters3),
+                    'n_convFilters4' : int(convFilters4),
+                    'n_FCLayers' : int(numberOfFCLayers),
+                    'n_NeuronsPerFCLayers' : int(numberOfNeuronsPerFCLayer),
+                    'n_Epochs' : int(numberOfEpochs),
+                    'adamLearningRates' : float(adamLearningRate),
+                    'L2Rates' : float(L2Rate),
+                    'modelSize' : float(model_size),
+                    'trainScore': float(trainScore),
+                    'devScore': float(devScore),
+                    'testScore': float(testScore)
+                }
+                with open('../Models/best_dv_model_params.json', 'w') as f:
+                    json.dump(bestModelParams, f)
+                bestDevScore = devScore       
+
+            n_convFilters1.append(int(convFilters1))
+            n_convFilters2.append(int(convFilters2))
+            n_convFilters3.append(int(convFilters3))
+            n_convFilters4.append(int(convFilters4))
+            
+            n_FCLayers.append(int(numberOfFCLayers))
+            n_NeuronsPerFCLayers.append(int(numberOfNeuronsPerFCLayer))
+            n_Epochs.append(int(numberOfEpochs))
+            
+            adamLearningRates.append(float(adamLearningRate))
+            L2Rates.append(float(L2Rate))
+            trainScores.append(float(trainScore))
+            devScores.append(float(devScore))
+            
+            print('concluding trial ',trial)
+            trial += 1
+        else:
+            print(f'redoing trial {trial}. Model was {model_size}MB.')
+            failedTrial = createModelParametersDF([convFilters1],[convFilters2],[convFilters3],[convFilters4],
+                                                  [numberOfFCLayers],[numberOfNeuronsPerFCLayer],[numberOfEpochs],
+                                                  [adamLearningRate],[L2Rate],[np.nan],[np.nan])
+            display(failedTrial)
+        
+            
+        if (trial % 10 == 9): 
+            modelParametersDF = createModelParametersDF(n_convFilters1,n_convFilters2,n_convFilters3,n_convFilters4,
+                                                        n_FCLayers,n_NeuronsPerFCLayers,n_Epochs,adamLearningRates,L2Rates,
+                                                        trainScores,devScores)
+            modelParametersDF = modelParametersDF.sort_values(by='trainScore', ascending=False)
+            display(modelParametersDF)
+            
+            top5 = modelParametersDF[0:5]
+            possibleConvFilters1 = getAdjustedRange(top5['n_convFilters1'])
+            possibleConvFilters2 = getAdjustedRange(top5['n_convFilters2'])
+            possibleConvFilters3 = getAdjustedRange(top5['n_convFilters3'])
+            possibleConvFilters4 = getAdjustedRange(top5['n_convFilters4'])
+        
+            possibleNumberOfFCLayers = getAdjustedRange(top5['n_FCLayers'])
+            possibleNumberOfNeuronsPerFCLayer = getAdjustedRange(top5['n_NeuronsPerFCLayers'])
+        
+            possibleNumberOfEpochs = getAdjustedRange(top5['n_Epochs'])
+            adamLearningRateCriticalPoints = calculateLogisticCriticalPoints(top5['adamLearningRates'])
+            L2CriticalPoints = calculateLogisticCriticalPoints(top5['L2Rates'])
+
+            n_convFilters1 = []
+            n_convFilters2 = []
+            n_convFilters3 = []
+            n_convFilters4 = []
+            n_FCLayers = []
+            n_NeuronsPerFCLayers = []
+            n_Epochs = []
+            adamLearningRates = []
+            L2Rates = []
+            trainScores = []
+            devScores = []
+
+            if bestDevScore > 0.91:
+                trial = 101
+                
+    displayFinalResults('../Models/best_dv_model_params.json')
+
+
+# In[ ]:
+
+
+if __name__ == "__main__":
+    main()
+
