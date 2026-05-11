@@ -173,5 +173,8 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Gradio auto-generated files
+Src/.gradio/
+
 Data
 .DS_Store
