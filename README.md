@@ -1,13 +1,33 @@
 # Voice Cloning and Fake Audio Detection
-The goal of this project is to create 2 models, one is for Voice Cloning (VC), and the other is for Fake Audio Detection (FAD). 
+The goal of this project is to create 2 models, one is for Voice Cloning (VC), and the other is for Fake Audio Detection (FAD). Sequential model chosen has 4 Convolution-Pool layers followed by 16 Dense layers.
 
 ## Methodology
-- ⁠concatenate sentences of each speaker, so they are long enough to be inputs
-- ⁠Loop through English TTS models and compare word error rates. Use the model with the lowest word error rate for part 2
-- Use the selected model to generate sentences for training and testing for FAD.
-- ⁠Balance train and test sets with real sentences (1) and generated sentences (0).
-- ⁠Use MFCC on real and generated audio for X inputs
-- ⁠Train and tune a sequential model for FAD.
+### Part 1: Voice Cloning
+- ⁠concatenate sentences of each speaker, so they are long enough to be inputs (Vocoder.ipynb)
+- ⁠Loop through English TTS models (Vocoder.ipynb) and compare word error rates. Use the model with the lowest word error rate for part 2 (EvaluateVoices.ipynb).
+  - English models include: 
+    - tts_models/en/ljspeech/vits--neon
+    - tts_models/en/ljspeech/vits
+    - tts_models/en/ljspeech/fast_pitch
+    - tts_models/en/jenny/jenny
+    - tts_models/en/ljspeech/overflow
+    - tts_models/en/ljspeech/glow-tts
+    - tts_models/en/ljspeech/neural_hmm
+    - tts_models/en/ljspeech/speedy-speech
+    - tts_models/en/ljspeech/tacotron2-DCA
+    - tts_models/en/ljspeech/tacotron2-DDC_ph
+    - tts_models/en/sam/tacotron-DDC
+    - tts_models/en/ek1/tacotron2
+    - tts_models/en/blizzard2013/capacitron-t2-c50
+    - tts_models/en/ljspeech/tacotron2-DDC
+    - tts_models/en/blizzard2013/capacitron-t2-c150_v2
+
+### Part 2: Fake Audio Detection
+- Use the selected model to generate sentences for training and testing for FAD.(PrepareFADData.ipynb)
+- ⁠Balance train and test sets with real sentences (1) and generated sentences (0). (PrepareFADData.ipynb)
+- ⁠Use MFCC on real and generated audio for X matrix inputs (CreateMFCCs.ipynb)
+- ⁠Train and tune a sequential model for FAD. (DetectVoices.ipynb)
+- After creating the best performing model, create a Gradio interface for uploading audio clips and receiving detection results. (predict.py)
 
 ## Repo Contents
 

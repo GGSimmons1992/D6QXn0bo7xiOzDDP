@@ -1,1 +1,15 @@
-{"n_convFilters1": 36, "n_convFilters2": 12, "n_convFilters3": 31, "n_convFilters4": 28, "n_FCLayers": 16, "n_NeuronsPerFCLayers": 9, "n_Epochs": 5, "adamLearningRates": 0.0012387966501264975, "L2Rates": 0.03952019456229424, "modelSize": 0.42093658447265625, "trainScore": 0.9997334480285645, "devScore": 1.0, "testScore": 0.9993913769721985}
+{
+    "n_convFilters1": 36,
+    "n_convFilters2": 12,
+    "n_convFilters3": 31,
+    "n_convFilters4": 28,
+    "n_FCLayers": 16,
+    "n_NeuronsPerFCLayers": 9,
+    "n_Epochs": 5,
+    "adamLearningRates": 0.0012387966501264975,
+    "L2Rates": 0.03952019456229424,
+    "modelSize": 0.42093658447265625,
+    "trainScore": 0.9997334480285645,
+    "devScore": 1.0,
+    "testScore": 0.9993913769721985
+}
